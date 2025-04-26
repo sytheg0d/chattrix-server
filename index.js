@@ -1,9 +1,10 @@
+require('dotenv').config(); // .env dosyasını yükle
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
 
 const app = express();
 app.use(cors());
@@ -14,56 +15,65 @@ const io = new Server(server, {
   cors: { origin: '*' }
 });
 
-const usersPath = path.join(__dirname, 'users.json');
-let onlineUsers = new Map();
-
-// Yardımcı fonksiyonlar
-const loadUsers = () => {
-  if (!fs.existsSync(usersPath)) return {};
-  return JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
-};
-
-const saveUsers = (data) => {
-  fs.writeFileSync(usersPath, JSON.stringify(data, null, 2), 'utf-8');
-};
-
-// API: Giriş kontrolü
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-  const users = loadUsers();
-
-  if (users[username] && users[username] === password) {
-    return res.status(200).json({ success: true });
-  }
-
-  return res.status(401).json({ success: false, message: 'Geçersiz bilgiler' });
+// MongoDB bağlantısı
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => {
+  console.log('✅ MongoDB bağlantısı başarılı');
+}).catch(err => {
+  console.error('❌ MongoDB bağlantı hatası:', err);
 });
 
-// API: Kayıt oluştur
-app.post('/register', (req, res) => {
+// Kullanıcı şeması ve modeli
+const UserSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true }
+});
+const User = mongoose.model('User', UserSchema);
+
+// Çevrimiçi kullanıcılar
+let onlineUsers = new Map();
+
+// API: Giriş
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
-  const users = loadUsers();
-
-  if (users[username]) {
-    console.log("Kayıt reddedildi. Kullanıcı zaten var:", username);
-    return res.status(409).json({ success: false, message: 'Kullanıcı zaten var' });
-  }
-
-  users[username] = password;
 
   try {
-    saveUsers(users);
-    console.log("Kayıt edildi:", username);
+    const user = await User.findOne({ username });
+    if (user && user.password === password) {
+      return res.status(200).json({ success: true });
+    }
+    return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
+  } catch (err) {
+    console.error("Login hatası:", err);
+    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
+  }
+});
+
+// API: Kayıt
+app.post('/register', async (req, res) => {
+  const { username, password } = req.body;
+
+  try {
+    const existing = await User.findOne({ username });
+    if (existing) {
+      return res.status(409).json({ success: false, message: 'Kullanıcı adı zaten kullanılıyor' });
+    }
+
+    const newUser = new User({ username, password });
+    await newUser.save();
+
     return res.status(201).json({ success: true });
   } catch (err) {
-    console.error("Yazılamadı:", err);
-    return res.status(500).json({ success: false, message: "Sunucu hatası" });
+    console.error("Register hatası:", err);
+    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
   }
 });
 
 // SOCKET.IO
 io.on('connection', (socket) => {
-  console.log('Bağlandı:', socket.id);
+  console.log('🔌 Kullanıcı bağlandı:', socket.id);
 
   socket.on('join', (username) => {
     for (const [id, name] of onlineUsers.entries()) {
@@ -90,9 +100,8 @@ io.on('connection', (socket) => {
   });
 });
 
-// 🔥 DİNAMİK PORT BURASI:
+// Port ve başlatma
 const PORT = process.env.PORT || 3001;
-
 server.listen(PORT, () => {
-  console.log(`Sunucu çalışıyor: http://localhost:${PORT}`);
+  console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
 });
