@@ -4,10 +4,27 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const mongoose = require('mongoose'); // ✅ Mongoose bağlantısı için eklendi
 
 const app = express();
 
-// CORS ayarları
+// MongoDB Bağlantısı
+mongoose.connect('mongodb+srv://chattrixadmin:159753456@cluster0.9pzwvk6.mongodb.net/chattrix?retryWrites=true&w=majority&appName=Cluster0', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+})
+.then(() => console.log('✅ MongoDB bağlantısı başarılı'))
+.catch((err) => console.error('❌ MongoDB bağlantı hatası:', err));
+
+// Mesaj Şeması
+const messageSchema = new mongoose.Schema({
+  sender: String,
+  message: String,
+  timestamp: String
+});
+
+const Message = mongoose.model('Message', messageSchema);
+
 const corsOptions = {
   origin: 'https://chattrix-2ur3.onrender.com',
   methods: ['GET', 'POST'],
@@ -26,9 +43,8 @@ const io = new Server(server, {
   }
 });
 
-// Kullanıcı verileri dosyası
+// Kullanıcı verileri dosyası (users.json ile devam)
 const usersPath = path.join(__dirname, 'users.json');
-const messagesPath = path.join(__dirname, 'messages.json');
 
 const loadUsers = () => {
   if (!fs.existsSync(usersPath)) return {};
@@ -37,15 +53,6 @@ const loadUsers = () => {
 
 const saveUsers = (data) => {
   fs.writeFileSync(usersPath, JSON.stringify(data, null, 2), 'utf-8');
-};
-
-const loadMessages = () => {
-  if (!fs.existsSync(messagesPath)) return [];
-  return JSON.parse(fs.readFileSync(messagesPath, 'utf-8'));
-};
-
-const saveMessages = (messages) => {
-  fs.writeFileSync(messagesPath, JSON.stringify(messages, null, 2), 'utf-8');
 };
 
 // Çevrimiçi kullanıcılar
@@ -78,16 +85,20 @@ app.post('/register', (req, res) => {
 });
 
 // SOCKET.IO
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log('🔌 Kullanıcı bağlandı:', socket.id);
 
-  // Eski mesajları yeni bağlanan kullanıcıya gönder
-  const oldMessages = loadMessages();
+  // Eski mesajları MongoDB'den çek ve gönder
+  const oldMessages = await Message.find({});
   oldMessages.forEach((msg) => {
-    socket.emit('receive_message', msg);
+    socket.emit('receive_message', {
+      sender: msg.sender,
+      message: msg.message,
+      timestamp: msg.timestamp
+    });
   });
 
-  socket.on('join', (username) => {
+  socket.on('join', async (username) => {
     for (const [id, name] of onlineUsers.entries()) {
       if (name === username) {
         onlineUsers.delete(id);
@@ -97,51 +108,41 @@ io.on('connection', (socket) => {
     onlineUsers.set(socket.id, username);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
-    // Sohbete katıldı mesajı
-    const joinMessage = {
+    const joinMessage = new Message({
       sender: 'Sistem',
       message: `${username} sohbete katıldı.`,
       timestamp: new Date().toLocaleTimeString()
-    };
+    });
 
+    await joinMessage.save();
     io.emit('receive_message', joinMessage);
-
-    const currentMessages = loadMessages();
-    currentMessages.push(joinMessage);
-    saveMessages(currentMessages);
   });
 
-  socket.on('send_message', (data) => {
-    const newMessage = {
+  socket.on('send_message', async (data) => {
+    const newMessage = new Message({
       sender: data.sender,
       message: data.message,
       timestamp: data.timestamp
-    };
+    });
 
+    await newMessage.save();
     io.emit('receive_message', newMessage);
-
-    const currentMessages = loadMessages();
-    currentMessages.push(newMessage);
-    saveMessages(currentMessages);
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     const username = onlineUsers.get(socket.id);
     onlineUsers.delete(socket.id);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
     if (username) {
-      const leaveMessage = {
+      const leaveMessage = new Message({
         sender: 'Sistem',
         message: `${username} sohbetten ayrıldı.`,
         timestamp: new Date().toLocaleTimeString()
-      };
+      });
 
+      await leaveMessage.save();
       io.emit('receive_message', leaveMessage);
-
-      const currentMessages = loadMessages();
-      currentMessages.push(leaveMessage);
-      saveMessages(currentMessages);
     }
   });
 });
