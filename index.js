@@ -4,7 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const mongoose = require('mongoose'); // ✅ Mongoose bağlantısı için eklendi
+const mongoose = require('mongoose');
 
 const app = express();
 
@@ -89,12 +89,6 @@ io.on('connection', (socket) => {
   console.log('🔌 Kullanıcı bağlandı:', socket.id);
 
   socket.on('join', async (username) => {
-    for (const [id, name] of onlineUsers.entries()) {
-      if (name === username) {
-        onlineUsers.delete(id);
-      }
-    }
-
     onlineUsers.set(socket.id, username);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
@@ -130,21 +124,27 @@ io.on('connection', (socket) => {
     io.emit('receive_message', newMessage);
   });
 
-  socket.on('disconnect', async () => {
-    const username = onlineUsers.get(socket.id);
-    onlineUsers.delete(socket.id);
+  socket.on('logout', async (username) => {
+    for (const [id, name] of onlineUsers.entries()) {
+      if (name === username) {
+        onlineUsers.delete(id);
+      }
+    }
+
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
-    if (username) {
-      const leaveMessage = new Message({
-        sender: 'Sistem',
-        message: `${username} sohbetten ayrıldı.`,
-        timestamp: new Date().toLocaleTimeString()
-      });
+    const leaveMessage = new Message({
+      sender: 'Sistem',
+      message: `${username} sohbetten ayrıldı.`,
+      timestamp: new Date().toLocaleTimeString()
+    });
 
-      await leaveMessage.save();
-      io.emit('receive_message', leaveMessage);
-    }
+    await leaveMessage.save();
+    io.emit('receive_message', leaveMessage);
+  });
+
+  socket.on('disconnect', () => {
+    // ❗ disconnect olduğunda artık kullanıcıyı listeden silmiyoruz
   });
 });
 
