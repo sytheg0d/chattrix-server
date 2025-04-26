@@ -7,12 +7,24 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 
 const app = express();
-app.use(cors());
+
+// CORS ayarları
+const corsOptions = {
+  origin: 'https://chattrix-2ur3.onrender.com',
+  methods: ['GET', 'POST'],
+  credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: {
+    origin: 'https://chattrix-2ur3.onrender.com',
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
 });
 
 // MongoDB bağlantısı
