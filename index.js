@@ -26,7 +26,7 @@ const io = new Server(server, {
   }
 });
 
-// Kullanıcı verilerini saklamak için JSON dosyası
+// Kullanıcı verileri dosyası
 const usersPath = path.join(__dirname, 'users.json');
 
 const loadUsers = () => {
@@ -80,6 +80,13 @@ io.on('connection', (socket) => {
 
     onlineUsers.set(socket.id, username);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
+
+    // ✨ Sohbete katıldı mesajı
+    io.emit('receive_message', {
+      sender: 'Sistem',
+      message: `${username} sohbete katıldı.`,
+      timestamp: new Date().toLocaleTimeString()
+    });
   });
 
   socket.on('send_message', (data) => {
@@ -91,12 +98,22 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    const username = onlineUsers.get(socket.id);
     onlineUsers.delete(socket.id);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
+
+    // ✨ Sohbetten ayrıldı mesajı (istersen)
+    if (username) {
+      io.emit('receive_message', {
+        sender: 'Sistem',
+        message: `${username} sohbetten ayrıldı.`,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }
   });
 });
 
-// Port ve başlatma
+// Sunucu başlat
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
