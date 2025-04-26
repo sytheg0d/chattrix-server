@@ -143,8 +143,32 @@ io.on('connection', (socket) => {
     io.emit('receive_message', leaveMessage);
   });
 
+  // ❗ Disconnect olduğunda 10 saniye bekleyip kontrol ediyoruz
   socket.on('disconnect', () => {
-    // ❗ disconnect olduğunda artık kullanıcıyı listeden silmiyoruz
+    const username = onlineUsers.get(socket.id);
+
+    setTimeout(async () => {
+      if (!Array.from(onlineUsers.keys()).includes(socket.id)) {
+        if (username) {
+          for (const [id, name] of onlineUsers.entries()) {
+            if (name === username) {
+              onlineUsers.delete(id);
+            }
+          }
+
+          io.emit('update_users', Array.from(new Set(onlineUsers.values())));
+
+          const leaveMessage = new Message({
+            sender: 'Sistem',
+            message: `${username} sohbetten ayrıldı.`,
+            timestamp: new Date().toLocaleTimeString()
+          });
+
+          await leaveMessage.save();
+          io.emit('receive_message', leaveMessage);
+        }
+      }
+    }, 10000); // 10 saniye sonra kontrol
   });
 });
 
