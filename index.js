@@ -28,6 +28,7 @@ const io = new Server(server, {
 
 // Kullanıcı verileri dosyası
 const usersPath = path.join(__dirname, 'users.json');
+const messagesPath = path.join(__dirname, 'messages.json');
 
 const loadUsers = () => {
   if (!fs.existsSync(usersPath)) return {};
@@ -36,6 +37,15 @@ const loadUsers = () => {
 
 const saveUsers = (data) => {
   fs.writeFileSync(usersPath, JSON.stringify(data, null, 2), 'utf-8');
+};
+
+const loadMessages = () => {
+  if (!fs.existsSync(messagesPath)) return [];
+  return JSON.parse(fs.readFileSync(messagesPath, 'utf-8'));
+};
+
+const saveMessages = (messages) => {
+  fs.writeFileSync(messagesPath, JSON.stringify(messages, null, 2), 'utf-8');
 };
 
 // Çevrimiçi kullanıcılar
@@ -71,6 +81,12 @@ app.post('/register', (req, res) => {
 io.on('connection', (socket) => {
   console.log('🔌 Kullanıcı bağlandı:', socket.id);
 
+  // Eski mesajları yeni bağlanan kullanıcıya gönder
+  const oldMessages = loadMessages();
+  oldMessages.forEach((msg) => {
+    socket.emit('receive_message', msg);
+  });
+
   socket.on('join', (username) => {
     for (const [id, name] of onlineUsers.entries()) {
       if (name === username) {
@@ -81,20 +97,32 @@ io.on('connection', (socket) => {
     onlineUsers.set(socket.id, username);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
-    // ✨ Sohbete katıldı mesajı
-    io.emit('receive_message', {
+    // Sohbete katıldı mesajı
+    const joinMessage = {
       sender: 'Sistem',
       message: `${username} sohbete katıldı.`,
       timestamp: new Date().toLocaleTimeString()
-    });
+    };
+
+    io.emit('receive_message', joinMessage);
+
+    const currentMessages = loadMessages();
+    currentMessages.push(joinMessage);
+    saveMessages(currentMessages);
   });
 
   socket.on('send_message', (data) => {
-    io.emit('receive_message', {
+    const newMessage = {
       sender: data.sender,
       message: data.message,
-      timestamp: data.timestamp,
-    });
+      timestamp: data.timestamp
+    };
+
+    io.emit('receive_message', newMessage);
+
+    const currentMessages = loadMessages();
+    currentMessages.push(newMessage);
+    saveMessages(currentMessages);
   });
 
   socket.on('disconnect', () => {
@@ -102,13 +130,18 @@ io.on('connection', (socket) => {
     onlineUsers.delete(socket.id);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
-    // ✨ Sohbetten ayrıldı mesajı (istersen)
     if (username) {
-      io.emit('receive_message', {
+      const leaveMessage = {
         sender: 'Sistem',
         message: `${username} sohbetten ayrıldı.`,
         timestamp: new Date().toLocaleTimeString()
-      });
+      };
+
+      io.emit('receive_message', leaveMessage);
+
+      const currentMessages = loadMessages();
+      currentMessages.push(leaveMessage);
+      saveMessages(currentMessages);
     }
   });
 });
