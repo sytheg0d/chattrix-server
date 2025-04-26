@@ -2,8 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
 const mongoose = require('mongoose');
 
 const app = express();
@@ -25,6 +23,14 @@ const messageSchema = new mongoose.Schema({
 
 const Message = mongoose.model('Message', messageSchema);
 
+// Kullanıcı Şeması
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  password: { type: String, required: true }
+});
+
+const User = mongoose.model('User', userSchema);
+
 const corsOptions = {
   origin: 'https://chattrix-2ur3.onrender.com',
   methods: ['GET', 'POST'],
@@ -43,45 +49,44 @@ const io = new Server(server, {
   }
 });
 
-// Kullanıcı verileri dosyası (users.json ile devam)
-const usersPath = path.join(__dirname, 'users.json');
-
-const loadUsers = () => {
-  if (!fs.existsSync(usersPath)) return {};
-  return JSON.parse(fs.readFileSync(usersPath, 'utf-8'));
-};
-
-const saveUsers = (data) => {
-  fs.writeFileSync(usersPath, JSON.stringify(data, null, 2), 'utf-8');
-};
-
 // Çevrimiçi kullanıcılar
 let onlineUsers = new Map();
 
 // API: Giriş
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { username, password } = req.body;
-  const users = loadUsers();
 
-  if (users[username] && users[username] === password) {
-    return res.status(200).json({ success: true });
+  try {
+    const user = await User.findOne({ username });
+    if (user && user.password === password) {
+      return res.status(200).json({ success: true });
+    } else {
+      return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
+    }
+  } catch (err) {
+    console.error('❌ Login hatası:', err);
+    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
   }
-  return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
 });
 
 // API: Kayıt
-app.post('/register', (req, res) => {
+app.post('/register', async (req, res) => {
   const { username, password } = req.body;
-  const users = loadUsers();
 
-  if (users[username]) {
-    return res.status(409).json({ success: false, message: 'Kullanıcı zaten var' });
+  try {
+    const existingUser = await User.findOne({ username });
+    if (existingUser) {
+      return res.status(409).json({ success: false, message: 'Kullanıcı zaten var' });
+    }
+
+    const newUser = new User({ username, password });
+    await newUser.save();
+
+    return res.status(201).json({ success: true });
+  } catch (err) {
+    console.error('❌ Register hatası:', err);
+    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
   }
-
-  users[username] = password;
-  saveUsers(users);
-
-  return res.status(201).json({ success: true });
 });
 
 // SOCKET.IO
@@ -143,7 +148,6 @@ io.on('connection', (socket) => {
     io.emit('receive_message', leaveMessage);
   });
 
-  // ❗ Disconnect olduğunda 10 saniye bekleyip kontrol ediyoruz
   socket.on('disconnect', () => {
     const username = onlineUsers.get(socket.id);
 
@@ -168,7 +172,7 @@ io.on('connection', (socket) => {
           io.emit('receive_message', leaveMessage);
         }
       }
-    }, 10000); // 10 saniye sonra kontrol
+    }, 10000); // 10 saniye bekleme
   });
 });
 
