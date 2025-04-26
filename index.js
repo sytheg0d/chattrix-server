@@ -85,18 +85,8 @@ app.post('/register', (req, res) => {
 });
 
 // SOCKET.IO
-io.on('connection', async (socket) => {
+io.on('connection', (socket) => {
   console.log('🔌 Kullanıcı bağlandı:', socket.id);
-
-  // Eski mesajları MongoDB'den çek ve gönder
-  const oldMessages = await Message.find({});
-  oldMessages.forEach((msg) => {
-    socket.emit('receive_message', {
-      sender: msg.sender,
-      message: msg.message,
-      timestamp: msg.timestamp
-    });
-  });
 
   socket.on('join', async (username) => {
     for (const [id, name] of onlineUsers.entries()) {
@@ -108,6 +98,17 @@ io.on('connection', async (socket) => {
     onlineUsers.set(socket.id, username);
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
+    // 📌 Kullanıcı katılınca eski mesajları çek
+    const oldMessages = await Message.find({});
+    oldMessages.forEach((msg) => {
+      socket.emit('receive_message', {
+        sender: msg.sender,
+        message: msg.message,
+        timestamp: msg.timestamp
+      });
+    });
+
+    // 📌 Sohbete katıldı mesajı
     const joinMessage = new Message({
       sender: 'Sistem',
       message: `${username} sohbete katıldı.`,
