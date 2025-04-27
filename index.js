@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -7,7 +6,7 @@ const mongoose = require('mongoose');
 
 const app = express();
 
-// MongoDB bağlantısı
+// MongoDB Bağlantısı
 mongoose.connect('mongodb+srv://chattrixadmin:159753456@cluster0.9pzwvk6.mongodb.net/chattrix?retryWrites=true&w=majority&appName=Cluster0', {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -26,7 +25,7 @@ const Message = mongoose.model('Message', messageSchema);
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, default: 'user' }
+  role: { type: String, default: 'user' } // user, moderator, admin, god
 });
 const User = mongoose.model('User', userSchema);
 
@@ -70,20 +69,18 @@ io.use(async (socket, next) => {
   next();
 });
 
-// Admin Token
+// API: Admin Panel Girişi
 const adminToken = "159753456hang0ver";
-
-// Admin giriş API
 app.post('/admin-login', (req, res) => {
   const { token } = req.body;
   if (token === adminToken) {
-    return res.status(200).json({ success: true });
+    return res.status(200).json({ success: true, message: 'Admin paneline giriş başarılı' });
   } else {
-    return res.status(403).json({ success: false });
+    return res.status(403).json({ success: false, message: 'Geçersiz token' });
   }
 });
 
-// Login API
+// API: Login
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -94,7 +91,7 @@ app.post('/login', async (req, res) => {
       await newLog.save();
       return res.status(200).json({ success: true, role: user.role });
     } else {
-      return res.status(401).json({ success: false });
+      return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
     }
   } catch (err) {
     console.error('❌ Login hatası:', err);
@@ -102,18 +99,18 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Register API
+// API: Register
 app.post('/register', async (req, res) => {
   const { username, password } = req.body;
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   try {
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const banned = await BannedIP.findOne({ ip });
     if (banned) {
-      return res.status(403).json({ success: false });
+      return res.status(403).json({ success: false, message: 'Bu siteden kalıcı olarak yasaklandınız.' });
     }
     const existingUser = await User.findOne({ username });
     if (existingUser) {
-      return res.status(409).json({ success: false });
+      return res.status(409).json({ success: false, message: 'Kullanıcı zaten var' });
     }
     const newUser = new User({ username, password });
     await newUser.save();
@@ -124,7 +121,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Kullanıcı çekme API
+// API: Get Users
 app.get('/get-users', async (req, res) => {
   try {
     const users = await User.find({});
@@ -135,12 +132,12 @@ app.get('/get-users', async (req, res) => {
   }
 });
 
-// Rol güncelleme API
+// API: Update Role
 app.post('/update-role', async (req, res) => {
   const { username, newRole } = req.body;
   try {
     if (username.toLowerCase() === 'hang0ver') {
-      return res.status(403).json({ success: false });
+      return res.status(403).json({ success: false, message: 'Bu kullanıcının yetkisi değiştirilemez.' });
     }
     await User.updateOne({ username }, { role: newRole });
     return res.status(200).json({ success: true });
@@ -150,12 +147,12 @@ app.post('/update-role', async (req, res) => {
   }
 });
 
-// Kullanıcı silme API
+// API: Delete User
 app.post('/delete-user', async (req, res) => {
   const { username } = req.body;
   try {
     if (username.toLowerCase() === 'hang0ver') {
-      return res.status(403).json({ success: false });
+      return res.status(403).json({ success: false, message: 'Bu kullanıcı silinemez.' });
     }
     await User.deleteOne({ username });
     return res.status(200).json({ success: true });
@@ -165,7 +162,18 @@ app.post('/delete-user', async (req, res) => {
   }
 });
 
-// Banlı IP çekme API
+// API: Logları çek
+app.get('/logs', async (req, res) => {
+  try {
+    const logs = await Log.find({}).sort({ timestamp: -1 });
+    return res.status(200).json(logs);
+  } catch (err) {
+    console.error('❌ Log çekme hatası:', err);
+    return res.status(500).json({ success: false });
+  }
+});
+
+// API: Banlı IP'leri çek
 app.get('/banned-ips', async (req, res) => {
   try {
     const ips = await BannedIP.find({});
@@ -176,7 +184,7 @@ app.get('/banned-ips', async (req, res) => {
   }
 });
 
-// Ban kaldırma API
+// API: Banlı IP'yi kaldır
 app.post('/unban-ip', async (req, res) => {
   const { ip } = req.body;
   try {
@@ -188,13 +196,17 @@ app.post('/unban-ip', async (req, res) => {
   }
 });
 
-// SOCKET.IO olayları
+// SOCKET.IO
 io.on('connection', (socket) => {
   console.log('🔌 Kullanıcı bağlandı:', socket.id);
 
   socket.on('join', async (username) => {
     const userData = await User.findOne({ username });
-    if (!userData) return;
+    if (!userData) {
+      console.error('❌ Kullanıcı bulunamadı:', username);
+      return;
+    }
+
     onlineUsers.set(socket.id, { username: userData.username, role: userData.role });
     io.emit('update_users', Array.from(onlineUsers.values()));
 
@@ -211,8 +223,103 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send_message', async (data) => {
+    const senderData = await User.findOne({ username: data.sender });
+
     if (mutedUsers.has(data.sender)) {
-      socket.emit('receive_message', { sender: 'Sistem', message: 'Susturuldunuz.', timestamp: new Date().toLocaleTimeString() });
+      socket.emit('receive_message', {
+        sender: 'Sistem',
+        message: 'Susturuldunuz.',
+        timestamp: new Date().toLocaleTimeString()
+      });
+      return;
+    }
+
+    if (data.message.startsWith('/yetkiver') && senderData && senderData.role === 'god') {
+      const parts = data.message.split(' ');
+      const newRole = parts[1]?.toLowerCase();
+      const targetUsername = parts[2]?.replace('@', '');
+
+      if (['admin', 'moderator'].includes(newRole) && targetUsername) {
+        if (targetUsername.toLowerCase() === 'hang0ver') {
+          socket.emit('receive_message', {
+            sender: 'Sistem',
+            message: `Bu kullanıcının yetkisi değiştirilemez.`,
+            timestamp: new Date().toLocaleTimeString()
+          });
+          return;
+        }
+
+        await User.updateOne({ username: targetUsername }, { role: newRole });
+        io.emit('receive_message', {
+          sender: 'Sistem',
+          message: `${targetUsername} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
+          timestamp: new Date().toLocaleTimeString()
+        });
+      }
+      return;
+    }
+
+    if (data.message.startsWith('/yetkisil') && senderData && senderData.role === 'god') {
+      const parts = data.message.split(' ');
+      const targetUsername = parts[1]?.replace('@', '');
+
+      if (targetUsername) {
+        if (targetUsername.toLowerCase() === 'hang0ver') {
+          socket.emit('receive_message', {
+            sender: 'Sistem',
+            message: `Bu kullanıcının yetkisi silinemez.`,
+            timestamp: new Date().toLocaleTimeString()
+          });
+          return;
+        }
+
+        await User.updateOne({ username: targetUsername }, { role: 'user' });
+        io.emit('receive_message', {
+          sender: 'Sistem',
+          message: `${targetUsername} kullanıcısının tüm yetkileri kaldırıldı.`,
+          timestamp: new Date().toLocaleTimeString()
+        });
+      }
+      return;
+    }
+
+    if (data.message.startsWith('/mute') && senderData && (senderData.role === 'god' || senderData.role === 'admin' || senderData.role === 'moderator')) {
+      const parts = data.message.split(' ');
+      const targetUsername = parts[1]?.replace('@', '');
+
+      if (targetUsername) {
+        mutedUsers.set(targetUsername, true);
+        io.emit('receive_message', {
+          sender: 'Sistem',
+          message: `${targetUsername} kullanıcısı susturuldu.`,
+          timestamp: new Date().toLocaleTimeString()
+        });
+      }
+      return;
+    }
+
+    if (data.message.startsWith('/ban') && senderData && (senderData.role === 'god' || senderData.role === 'admin')) {
+      const parts = data.message.split(' ');
+      const targetUsername = parts[1]?.replace('@', '');
+
+      if (targetUsername) {
+        for (const [id, user] of onlineUsers.entries()) {
+          if (user.username === targetUsername) {
+            const bannedIP = socket.handshake.address;
+            const newBanned = new BannedIP({ ip: bannedIP });
+            await newBanned.save();
+            const bannedSocket = io.sockets.sockets.get(id);
+            if (bannedSocket) bannedSocket.disconnect();
+
+            io.emit('receive_message', {
+              sender: 'Sistem',
+              message: `${targetUsername} IP adresi ile kalıcı olarak yasaklandı.`,
+              timestamp: new Date().toLocaleTimeString()
+            });
+            break;
+          }
+        }
+      }
       return;
     }
 
@@ -235,15 +342,27 @@ io.on('connection', (socket) => {
       timestamp: new Date().toLocaleTimeString()
     });
     await leaveMessage.save();
+
+    const ip = socket.handshake.address;
+    const logoutLog = new Log({
+      username,
+      ip,
+      type: 'logout',
+      timestamp: new Date().toLocaleString()
+    });
+    await logoutLog.save();
   });
 
   socket.on('disconnect', () => {
-    onlineUsers.delete(socket.id);
-    io.emit('update_users', Array.from(onlineUsers.values()));
+    const user = onlineUsers.get(socket.id);
+    if (user) {
+      onlineUsers.delete(socket.id);
+      io.emit('update_users', Array.from(onlineUsers.values()));
+    }
   });
 });
 
-// Sunucu başlat
+// Sunucu Başlat
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
