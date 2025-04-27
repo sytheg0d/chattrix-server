@@ -69,6 +69,17 @@ io.use(async (socket, next) => {
   next();
 });
 
+// API: Admin Panel Girişi (Token doğrulama)
+const adminToken = "159753456hang0ver"; // Token burada tanımlanır
+app.post('/admin-login', (req, res) => {
+  const { token } = req.body;
+  if (token === adminToken) {
+    return res.status(200).json({ success: true, message: 'Admin paneline giriş başarılı' });
+  } else {
+    return res.status(403).json({ success: false, message: 'Geçersiz token' });
+  }
+});
+
 // API: Login
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
@@ -222,38 +233,6 @@ io.on('connection', (socket) => {
         io.emit('receive_message', {
           sender: 'Sistem',
           message: `${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
-          timestamp: new Date().toLocaleTimeString()
-        });
-      }
-    }
-
-    if (data.message.startsWith('/yetkiver') && senderData?.role === 'god') {
-      const parts = data.message.split(' ');
-      const newRole = parts[1]?.toLowerCase();
-      const target = parts[2]?.replace('@', '');
-      if (['admin', 'moderator'].includes(newRole) && target) {
-        await User.updateOne({ username: target }, { role: newRole });
-        io.emit('receive_message', {
-          sender: 'Sistem',
-          message: `${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
-          timestamp: new Date().toLocaleTimeString()
-        });
-      }
-    }
-    
-    if (data.message.startsWith('/yetkisil') && senderData?.role === 'god') {
-      const targetUsername = data.message.split(' ')[1]?.replace('@', '');
-      if (targetUsername.toLowerCase() !== 'hang0ver') {
-        await User.updateOne({ username: targetUsername }, { role: 'user' });
-        io.emit('receive_message', {
-          sender: 'Sistem',
-          message: `${targetUsername} kullanıcısının yetkisi kaldırıldı.`,
-          timestamp: new Date().toLocaleTimeString()
-        });
-      } else {
-        socket.emit('receive_message', {
-          sender: 'Sistem',
-          message: 'Bu kullanıcının yetkisi silinemez.',
           timestamp: new Date().toLocaleTimeString()
         });
       }
