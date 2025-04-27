@@ -69,122 +69,6 @@ io.use(async (socket, next) => {
   next();
 });
 
-// API: Login
-app.post('/login', async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const user = await User.findOne({ username });
-    if (user && user.password === password) {
-      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-      const newLog = new Log({ username, ip, type: 'login', timestamp: new Date().toLocaleString() });
-      await newLog.save();
-      return res.status(200).json({ success: true, role: user.role });
-    } else {
-      return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
-    }
-  } catch (err) {
-    console.error('❌ Login hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Register
-app.post('/register', async (req, res) => {
-  const { username, password } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  try {
-    const banned = await BannedIP.findOne({ ip });
-    if (banned) {
-      return res.status(403).json({ success: false, message: 'Bu siteden kalıcı olarak yasaklandınız.' });
-    }
-    const existingUser = await User.findOne({ username });
-    if (existingUser) {
-      return res.status(409).json({ success: false, message: 'Kullanıcı zaten var' });
-    }
-    const newUser = new User({ username, password });
-    await newUser.save();
-    return res.status(201).json({ success: true });
-  } catch (err) {
-    console.error('❌ Register hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Get Users
-app.get('/get-users', async (req, res) => {
-  try {
-    const users = await User.find({});
-    return res.status(200).json(users);
-  } catch (err) {
-    console.error('❌ Kullanıcı çekme hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Update Role
-app.post('/update-role', async (req, res) => {
-  const { username, newRole } = req.body;
-  try {
-    if (username.toLowerCase() === 'hang0ver') {
-      return res.status(403).json({ success: false, message: 'Bu kullanıcının yetkisi değiştirilemez.' });
-    }
-    await User.updateOne({ username }, { role: newRole });
-    return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('❌ Rol güncelleme hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Delete User
-app.post('/delete-user', async (req, res) => {
-  const { username } = req.body;
-  try {
-    if (username.toLowerCase() === 'hang0ver') {
-      return res.status(403).json({ success: false, message: 'Bu kullanıcı silinemez.' });
-    }
-    await User.deleteOne({ username });
-    return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('❌ Kullanıcı silme hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Logları çek
-app.get('/logs', async (req, res) => {
-  try {
-    const logs = await Log.find({}).sort({ timestamp: -1 });
-    return res.status(200).json(logs);
-  } catch (err) {
-    console.error('❌ Log çekme hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Banlı IP'leri çek
-app.get('/banned-ips', async (req, res) => {
-  try {
-    const ips = await BannedIP.find({});
-    return res.status(200).json(ips);
-  } catch (err) {
-    console.error('❌ Banlı IP çekme hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Banlı IP'yi kaldır
-app.post('/unban-ip', async (req, res) => {
-  const { ip } = req.body;
-  try {
-    await BannedIP.deleteOne({ ip });
-    return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('❌ IP kaldırma hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
 // SOCKET.IO
 io.on('connection', (socket) => {
   console.log('🔌 Kullanıcı bağlandı:', socket.id);
@@ -208,25 +92,13 @@ io.on('connection', (socket) => {
   socket.on('send_message', async (data) => {
     const senderData = await User.findOne({ username: data.sender });
 
+    // Mute kontrolü
     if (mutedUsers.has(data.sender)) {
       socket.emit('receive_message', { sender: 'Sistem', message: 'Susturulduğunuz.', timestamp: new Date().toLocaleTimeString() });
       return;
     }
 
-    if (data.message.startsWith('/yetkiver') && senderData && senderData.role === 'god') {
-      const parts = data.message.split(' ');
-      const newRole = parts[1]?.toLowerCase();
-      const target = parts[2]?.replace('@', '');
-      if (['admin', 'moderator'].includes(newRole) && target) {
-        await User.updateOne({ username: target }, { role: newRole });
-        io.emit('receive_message', {
-          sender: 'Sistem',
-          message: `${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
-          timestamp: new Date().toLocaleTimeString()
-        });
-      }
-    }
-
+    // /yetkiver Komutu
     if (data.message.startsWith('/yetkiver') && senderData?.role === 'god') {
       const parts = data.message.split(' ');
       const newRole = parts[1]?.toLowerCase();
@@ -240,7 +112,8 @@ io.on('connection', (socket) => {
         });
       }
     }
-    
+
+    // /yetkisil Komutu
     if (data.message.startsWith('/yetkisil') && senderData?.role === 'god') {
       const targetUsername = data.message.split(' ')[1]?.replace('@', '');
       if (targetUsername.toLowerCase() !== 'hang0ver') {
@@ -259,6 +132,18 @@ io.on('connection', (socket) => {
       }
     }
 
+    // /mute Komutu
+    if (data.message.startsWith('/mute') && senderData?.role === 'god') {
+      const targetUsername = data.message.split(' ')[1]?.replace('@', '');
+      mutedUsers.set(targetUsername, true); // Kullanıcıyı sustur
+      io.emit('receive_message', {
+        sender: 'Sistem',
+        message: `${targetUsername} kullanıcısı susturuldu.`,
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }
+
+    // Mesajı kaydet ve gönder
     const newMessage = new Message(data);
     await newMessage.save();
     io.emit('receive_message', data);
