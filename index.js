@@ -1,3 +1,4 @@
+// index.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -6,7 +7,7 @@ const mongoose = require('mongoose');
 
 const app = express();
 
-// MongoDB Bağlantısı
+// MongoDB bağlantısı
 mongoose.connect('mongodb+srv://chattrixadmin:159753456@cluster0.9pzwvk6.mongodb.net/chattrix?retryWrites=true&w=majority&appName=Cluster0', {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -25,7 +26,7 @@ const Message = mongoose.model('Message', messageSchema);
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  role: { type: String, default: 'user' } // user, moderator, admin, god
+  role: { type: String, default: 'user' }
 });
 const User = mongoose.model('User', userSchema);
 
@@ -69,18 +70,20 @@ io.use(async (socket, next) => {
   next();
 });
 
-// API: Admin Panel Girişi (Token doğrulama)
-const adminToken = "159753456hang0ver"; // Token burada tanımlanır
+// Admin Token
+const adminToken = "159753456hang0ver";
+
+// Admin giriş API
 app.post('/admin-login', (req, res) => {
   const { token } = req.body;
   if (token === adminToken) {
-    return res.status(200).json({ success: true, message: 'Admin paneline giriş başarılı' });
+    return res.status(200).json({ success: true });
   } else {
-    return res.status(403).json({ success: false, message: 'Geçersiz token' });
+    return res.status(403).json({ success: false });
   }
 });
 
-// API: Login
+// Login API
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -91,7 +94,7 @@ app.post('/login', async (req, res) => {
       await newLog.save();
       return res.status(200).json({ success: true, role: user.role });
     } else {
-      return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
+      return res.status(401).json({ success: false });
     }
   } catch (err) {
     console.error('❌ Login hatası:', err);
@@ -99,18 +102,18 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// API: Register
+// Register API
 app.post('/register', async (req, res) => {
   const { username, password } = req.body;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   try {
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
     const banned = await BannedIP.findOne({ ip });
     if (banned) {
-      return res.status(403).json({ success: false, message: 'Bu siteden kalıcı olarak yasaklandınız.' });
+      return res.status(403).json({ success: false });
     }
     const existingUser = await User.findOne({ username });
     if (existingUser) {
-      return res.status(409).json({ success: false, message: 'Kullanıcı zaten var' });
+      return res.status(409).json({ success: false });
     }
     const newUser = new User({ username, password });
     await newUser.save();
@@ -121,7 +124,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// API: Get Users
+// Kullanıcı çekme API
 app.get('/get-users', async (req, res) => {
   try {
     const users = await User.find({});
@@ -132,12 +135,12 @@ app.get('/get-users', async (req, res) => {
   }
 });
 
-// API: Update Role
+// Rol güncelleme API
 app.post('/update-role', async (req, res) => {
   const { username, newRole } = req.body;
   try {
     if (username.toLowerCase() === 'hang0ver') {
-      return res.status(403).json({ success: false, message: 'Bu kullanıcının yetkisi değiştirilemez.' });
+      return res.status(403).json({ success: false });
     }
     await User.updateOne({ username }, { role: newRole });
     return res.status(200).json({ success: true });
@@ -147,12 +150,12 @@ app.post('/update-role', async (req, res) => {
   }
 });
 
-// API: Delete User
+// Kullanıcı silme API
 app.post('/delete-user', async (req, res) => {
   const { username } = req.body;
   try {
     if (username.toLowerCase() === 'hang0ver') {
-      return res.status(403).json({ success: false, message: 'Bu kullanıcı silinemez.' });
+      return res.status(403).json({ success: false });
     }
     await User.deleteOne({ username });
     return res.status(200).json({ success: true });
@@ -162,18 +165,7 @@ app.post('/delete-user', async (req, res) => {
   }
 });
 
-// API: Logları çek
-app.get('/logs', async (req, res) => {
-  try {
-    const logs = await Log.find({}).sort({ timestamp: -1 });
-    return res.status(200).json(logs);
-  } catch (err) {
-    console.error('❌ Log çekme hatası:', err);
-    return res.status(500).json({ success: false });
-  }
-});
-
-// API: Banlı IP'leri çek
+// Banlı IP çekme API
 app.get('/banned-ips', async (req, res) => {
   try {
     const ips = await BannedIP.find({});
@@ -184,7 +176,7 @@ app.get('/banned-ips', async (req, res) => {
   }
 });
 
-// API: Banlı IP'yi kaldır
+// Ban kaldırma API
 app.post('/unban-ip', async (req, res) => {
   const { ip } = req.body;
   try {
@@ -196,13 +188,15 @@ app.post('/unban-ip', async (req, res) => {
   }
 });
 
-// SOCKET.IO
+// SOCKET.IO olayları
 io.on('connection', (socket) => {
   console.log('🔌 Kullanıcı bağlandı:', socket.id);
 
   socket.on('join', async (username) => {
-    onlineUsers.set(socket.id, username);
-    io.emit('update_users', Array.from(new Set(onlineUsers.values())));
+    const userData = await User.findOne({ username });
+    if (!userData) return;
+    onlineUsers.set(socket.id, { username: userData.username, role: userData.role });
+    io.emit('update_users', Array.from(onlineUsers.values()));
 
     const oldMessages = await Message.find({});
     oldMessages.forEach((msg) => socket.emit('receive_message', msg));
@@ -217,25 +211,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send_message', async (data) => {
-    const senderData = await User.findOne({ username: data.sender });
-
     if (mutedUsers.has(data.sender)) {
-      socket.emit('receive_message', { sender: 'Sistem', message: 'Susturulduğunuz.', timestamp: new Date().toLocaleTimeString() });
+      socket.emit('receive_message', { sender: 'Sistem', message: 'Susturuldunuz.', timestamp: new Date().toLocaleTimeString() });
       return;
-    }
-
-    if (data.message.startsWith('/yetkiver') && senderData && senderData.role === 'god') {
-      const parts = data.message.split(' ');
-      const newRole = parts[1]?.toLowerCase();
-      const target = parts[2]?.replace('@', '');
-      if (['admin', 'moderator'].includes(newRole) && target) {
-        await User.updateOne({ username: target }, { role: newRole });
-        io.emit('receive_message', {
-          sender: 'Sistem',
-          message: `${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
-          timestamp: new Date().toLocaleTimeString()
-        });
-      }
     }
 
     const newMessage = new Message(data);
@@ -244,12 +222,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('logout', async (username) => {
-    for (const [id, name] of onlineUsers.entries()) {
-      if (name === username) {
+    for (const [id, user] of onlineUsers.entries()) {
+      if (user.username === username) {
         onlineUsers.delete(id);
       }
     }
-    io.emit('update_users', Array.from(new Set(onlineUsers.values())));
+    io.emit('update_users', Array.from(onlineUsers.values()));
 
     const leaveMessage = new Message({
       sender: 'Sistem',
@@ -257,27 +235,15 @@ io.on('connection', (socket) => {
       timestamp: new Date().toLocaleTimeString()
     });
     await leaveMessage.save();
-
-    const ip = socket.handshake.address;
-    const logoutLog = new Log({
-      username,
-      ip,
-      type: 'logout',
-      timestamp: new Date().toLocaleString()
-    });
-    await logoutLog.save();
   });
 
   socket.on('disconnect', () => {
-    const username = onlineUsers.get(socket.id);
-    if (username) {
-      onlineUsers.delete(socket.id);
-      io.emit('update_users', Array.from(new Set(onlineUsers.values())));
-    }
+    onlineUsers.delete(socket.id);
+    io.emit('update_users', Array.from(onlineUsers.values()));
   });
 });
 
-// Sunucu Başlat
+// Sunucu başlat
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
