@@ -1,3 +1,5 @@
+// index.js
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -53,11 +55,10 @@ app.use(express.json());
 
 // Sunucu
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: corsOptions
-});
+const io = new Server(server, { cors: corsOptions });
 
 let onlineUsers = new Map();
+let mutedUsers = new Map();
 
 // Banlı IP Kontrolü
 io.use(async (socket, next) => {
@@ -196,11 +197,7 @@ io.on('connection', (socket) => {
 
     const oldMessages = await Message.find({});
     oldMessages.forEach((msg) => {
-      socket.emit('receive_message', {
-        sender: msg.sender,
-        message: msg.message,
-        timestamp: msg.timestamp
-      });
+      socket.emit('receive_message', msg);
     });
 
     const joinMessage = new Message({
@@ -213,23 +210,10 @@ io.on('connection', (socket) => {
   });
 
   socket.on('send_message', async (data) => {
-    const newMessage = new Message({
-      sender: data.sender,
-      message: data.message,
-      timestamp: data.timestamp
-    });
-    await newMessage.save();
-    io.emit('receive_message', newMessage);
+    const senderData = await User.findOne({ username: data.sender });
 
-    // Komutlar
-    const parts = data.message.trim().split(' ');
-    const command = parts[0]?.toLowerCase();
-    const targetUsername = parts[1]?.replace('@', '');
-
-    const senderUsername = data.sender;
-    const senderData = await User.findOne({ username: senderUsername });
-
-    if (command === '/yetkiver' && senderData && senderData.role === 'god') {
+    if (data.message.startsWith('/yetkiver') && senderData && senderData.role === 'god') {
+      const parts = data.message.split(' ');
       const newRole = parts[1]?.toLowerCase();
       const target = parts[2]?.replace('@', '');
       if (['admin', 'moderator'].includes(newRole) && target) {
@@ -240,24 +224,31 @@ io.on('connection', (socket) => {
           timestamp: new Date().toLocaleTimeString()
         });
       }
+      return;
     }
 
-    if (command === '/yetkisil' && senderData && senderData.role === 'god') {
-      if (targetUsername.toLowerCase() === 'hang0ver') {
-        socket.emit('receive_message', {
-          sender: 'Sistem',
-          message: 'Bu kullanıcının yetkisi kaldırılamaz.',
-          timestamp: new Date().toLocaleTimeString()
-        });
-      } else {
+    if (data.message.startsWith('/yetkisil') && senderData && senderData.role === 'god') {
+      const targetUsername = data.message.split(' ')[1]?.replace('@', '');
+      if (targetUsername.toLowerCase() !== 'hang0ver') {
         await User.updateOne({ username: targetUsername }, { role: 'user' });
         io.emit('receive_message', {
           sender: 'Sistem',
           message: `${targetUsername} kullanıcısının yetkisi kaldırıldı.`,
           timestamp: new Date().toLocaleTimeString()
         });
+      } else {
+        socket.emit('receive_message', {
+          sender: 'Sistem',
+          message: 'Bu kullanıcının yetkisi silinemez.',
+          timestamp: new Date().toLocaleTimeString()
+        });
       }
+      return;
     }
+
+    const newMessage = new Message(data);
+    await newMessage.save();
+    io.emit('receive_message', data);
   });
 
   socket.on('logout', async (username) => {
@@ -274,7 +265,6 @@ io.on('connection', (socket) => {
       timestamp: new Date().toLocaleTimeString()
     });
     await leaveMessage.save();
-    io.emit('receive_message', leaveMessage);
 
     const ip = socket.handshake.address;
     const logoutLog = new Log({
@@ -295,7 +285,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// PORT
+// Sunucu Başlat
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
