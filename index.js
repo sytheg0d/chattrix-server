@@ -26,10 +26,21 @@ const Message = mongoose.model('Message', messageSchema);
 // Kullanıcı Şeması
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
-  password: { type: String, required: true }
+  password: { type: String, required: true },
+  role: { type: String, default: 'user' } // ✅ Rol alanı eklendi
 });
 
 const User = mongoose.model('User', userSchema);
+
+// Giriş Çıkış Log Şeması
+const logSchema = new mongoose.Schema({
+  username: String,
+  ip: String,
+  type: String, // login veya logout
+  timestamp: String
+});
+
+const Log = mongoose.model('Log', logSchema);
 
 const corsOptions = {
   origin: 'https://chattrix-2ur3.onrender.com',
@@ -59,7 +70,17 @@ app.post('/login', async (req, res) => {
   try {
     const user = await User.findOne({ username });
     if (user && user.password === password) {
-      return res.status(200).json({ success: true });
+      const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+      const newLog = new Log({
+        username,
+        ip,
+        type: 'login',
+        timestamp: new Date().toLocaleString()
+      });
+      await newLog.save();
+
+      return res.status(200).json({ success: true, role: user.role });
     } else {
       return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
     }
@@ -85,6 +106,43 @@ app.post('/register', async (req, res) => {
     return res.status(201).json({ success: true });
   } catch (err) {
     console.error('❌ Register hatası:', err);
+    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
+  }
+});
+
+// API: Kullanıcı rolünü değiştirme (sadece admin)
+app.post('/update-role', async (req, res) => {
+  const { username, newRole } = req.body;
+
+  try {
+    await User.updateOne({ username }, { role: newRole });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('❌ Rol güncelleme hatası:', err);
+    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
+  }
+});
+
+// API: Kullanıcı silme (sadece admin)
+app.post('/delete-user', async (req, res) => {
+  const { username } = req.body;
+
+  try {
+    await User.deleteOne({ username });
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('❌ Kullanıcı silme hatası:', err);
+    return res.status(500).json({ success: false, message: 'Sunucu hatası' });
+  }
+});
+
+// API: Logları çekme
+app.get('/logs', async (req, res) => {
+  try {
+    const logs = await Log.find({}).sort({ timestamp: -1 });
+    return res.status(200).json(logs);
+  } catch (err) {
+    console.error('❌ Log çekme hatası:', err);
     return res.status(500).json({ success: false, message: 'Sunucu hatası' });
   }
 });
@@ -146,6 +204,15 @@ io.on('connection', (socket) => {
 
     await leaveMessage.save();
     io.emit('receive_message', leaveMessage);
+
+    const ip = socket.handshake.address;
+    const logoutLog = new Log({
+      username,
+      ip,
+      type: 'logout',
+      timestamp: new Date().toLocaleString()
+    });
+    await logoutLog.save();
   });
 
   socket.on('disconnect', () => {
@@ -170,6 +237,15 @@ io.on('connection', (socket) => {
 
           await leaveMessage.save();
           io.emit('receive_message', leaveMessage);
+
+          const ip = socket.handshake.address;
+          const disconnectLog = new Log({
+            username,
+            ip,
+            type: 'logout',
+            timestamp: new Date().toLocaleString()
+          });
+          await disconnectLog.save();
         }
       }
     }, 10000); // 10 saniye bekleme
