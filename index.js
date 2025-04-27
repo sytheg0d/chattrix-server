@@ -1,5 +1,3 @@
-// index.js
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -71,7 +69,7 @@ io.use(async (socket, next) => {
   next();
 });
 
-// API: Giriş
+// API: Login
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -90,7 +88,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// API: Kayıt
+// API: Register
 app.post('/register', async (req, res) => {
   const { username, password } = req.body;
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -112,7 +110,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// API: Tüm kullanıcıları çek
+// API: Get Users
 app.get('/get-users', async (req, res) => {
   try {
     const users = await User.find({});
@@ -123,7 +121,7 @@ app.get('/get-users', async (req, res) => {
   }
 });
 
-// API: Rol Güncelle
+// API: Update Role
 app.post('/update-role', async (req, res) => {
   const { username, newRole } = req.body;
   try {
@@ -138,7 +136,7 @@ app.post('/update-role', async (req, res) => {
   }
 });
 
-// API: Kullanıcı Sil
+// API: Delete User
 app.post('/delete-user', async (req, res) => {
   const { username } = req.body;
   try {
@@ -196,9 +194,7 @@ io.on('connection', (socket) => {
     io.emit('update_users', Array.from(new Set(onlineUsers.values())));
 
     const oldMessages = await Message.find({});
-    oldMessages.forEach((msg) => {
-      socket.emit('receive_message', msg);
-    });
+    oldMessages.forEach((msg) => socket.emit('receive_message', msg));
 
     const joinMessage = new Message({
       sender: 'Sistem',
@@ -212,6 +208,11 @@ io.on('connection', (socket) => {
   socket.on('send_message', async (data) => {
     const senderData = await User.findOne({ username: data.sender });
 
+    if (mutedUsers.has(data.sender)) {
+      socket.emit('receive_message', { sender: 'Sistem', message: 'Susturulduğunuz.', timestamp: new Date().toLocaleTimeString() });
+      return;
+    }
+
     if (data.message.startsWith('/yetkiver') && senderData && senderData.role === 'god') {
       const parts = data.message.split(' ');
       const newRole = parts[1]?.toLowerCase();
@@ -224,7 +225,6 @@ io.on('connection', (socket) => {
           timestamp: new Date().toLocaleTimeString()
         });
       }
-      return;
     }
 
     if (data.message.startsWith('/yetkisil') && senderData && senderData.role === 'god') {
@@ -243,7 +243,6 @@ io.on('connection', (socket) => {
           timestamp: new Date().toLocaleTimeString()
         });
       }
-      return;
     }
 
     const newMessage = new Message(data);
