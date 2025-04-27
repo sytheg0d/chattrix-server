@@ -227,7 +227,21 @@ io.on('connection', (socket) => {
       }
     }
 
-    if (data.message.startsWith('/yetkisil') && senderData && senderData.role === 'god') {
+    if (data.message.startsWith('/yetkiver') && senderData?.role === 'god') {
+      const parts = data.message.split(' ');
+      const newRole = parts[1]?.toLowerCase();
+      const target = parts[2]?.replace('@', '');
+      if (['admin', 'moderator'].includes(newRole) && target) {
+        await User.updateOne({ username: target }, { role: newRole });
+        io.emit('receive_message', {
+          sender: 'Sistem',
+          message: `${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
+          timestamp: new Date().toLocaleTimeString()
+        });
+      }
+    }
+    
+    if (data.message.startsWith('/yetkisil') && senderData?.role === 'god') {
       const targetUsername = data.message.split(' ')[1]?.replace('@', '');
       if (targetUsername.toLowerCase() !== 'hang0ver') {
         await User.updateOne({ username: targetUsername }, { role: 'user' });
