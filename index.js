@@ -11,8 +11,8 @@ mongoose.connect('mongodb+srv://chattrixadmin:159753456@cluster0.9pzwvk6.mongodb
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-.then(() => console.log('✅ MongoDB bağlantısı başarılı'))
-.catch((err) => console.error('❌ MongoDB bağlantı hatası:', err));
+  .then(() => console.log('✅ MongoDB bağlantısı başarılı'))
+  .catch((err) => console.error('❌ MongoDB bağlantı hatası:', err));
 
 // Şemalar
 const messageSchema = new mongoose.Schema({
@@ -63,7 +63,7 @@ io.use(async (socket, next) => {
   const ip = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
   const banned = await BannedIP.findOne({ ip });
   if (banned) {
-    console.log(⛔ Yasaklı IP'den bağlantı reddedildi: ${ip});
+    console.log(`⛔ Yasaklı IP'den bağlantı reddedildi: ${ip}`);
     return next(new Error('Bu siteden kalıcı olarak yasaklandınız.'));
   }
   next();
@@ -198,7 +198,7 @@ io.on('connection', (socket) => {
 
     const joinMessage = new Message({
       sender: 'Sistem',
-      message: ${username} sohbete katıldı.,
+      message: `${username} sohbete katıldı.`,
       timestamp: new Date().toLocaleTimeString()
     });
     await joinMessage.save();
@@ -221,7 +221,7 @@ io.on('connection', (socket) => {
         await User.updateOne({ username: target }, { role: newRole });
         io.emit('receive_message', {
           sender: 'Sistem',
-          message: ${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.,
+          message: `${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -235,7 +235,7 @@ io.on('connection', (socket) => {
         await User.updateOne({ username: target }, { role: newRole });
         io.emit('receive_message', {
           sender: 'Sistem',
-          message: ${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.,
+          message: `${target} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
           timestamp: new Date().toLocaleTimeString()
         });
       }
@@ -247,7 +247,7 @@ io.on('connection', (socket) => {
         await User.updateOne({ username: targetUsername }, { role: 'user' });
         io.emit('receive_message', {
           sender: 'Sistem',
-          message: ${targetUsername} kullanıcısının yetkisi kaldırıldı.,
+          message: `${targetUsername} kullanıcısının yetkisi kaldırıldı.`,
           timestamp: new Date().toLocaleTimeString()
         });
       } else {
@@ -274,7 +274,7 @@ io.on('connection', (socket) => {
 
     const leaveMessage = new Message({
       sender: 'Sistem',
-      message: ${username} sohbetten ayrıldı.,
+      message: `${username} sohbetten ayrıldı.`,
       timestamp: new Date().toLocaleTimeString()
     });
     await leaveMessage.save();
@@ -301,5 +301,5 @@ io.on('connection', (socket) => {
 // Sunucu Başlat
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(🚀 Sunucu çalışıyor: http://localhost:${PORT});
-});   
+  console.log(`🚀 Sunucu çalışıyor: http://localhost:${PORT}`);
+});
