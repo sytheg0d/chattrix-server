@@ -68,7 +68,7 @@ const upload = multer({ storage: storage });
 // Server ve Socket.IO Başlangıcı
 const server = http.createServer(app);
 
-// Socket.IO için CORS yapılandırması (Eksik olan kısım)
+// Socket.IO için CORS yapılandırması
 const io = new Server(server, {
   cors: {
     origin: 'https://chattrix-2ur3.onrender.com',  // Frontend domain
@@ -80,6 +80,7 @@ const io = new Server(server, {
 // Global Değişkenler
 let onlineUsers = new Map();
 let mutedUsers = new Map();
+let messageCountTracker = {};
 
 // Admin Paneli Girişi
 const adminToken = "159753456hang0ver";
@@ -316,7 +317,7 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
 
     res.status(200).json({ success: true });
   } catch (err) {
-    console.error('❌ Fotoğraf upload hatası:', err);
+    console.error('❌ Fotoğraf yükleme hatası:', err);
     res.status(500).json({ success: false });
   }
 });
@@ -388,174 +389,168 @@ io.on('connection', (socket) => {
 
       const onlineList = await User.find({ isOnline: true }, 'username role');
       io.emit('update_users', onlineList);
+
+      const leaveMessage = new Message({
+        sender: 'Sistem',
+        message: `${user.username} bağlantıyı kesti.`,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      await leaveMessage.save();
+      io.emit('receive_message', leaveMessage);
     }
   });
 
-  // Kullanıcı Mesaj Gönderme
-  socket.on('send_message', async (data) => {
-    const senderData = await User.findOne({ username: data.sender });
-
-    if (mutedUsers.has(data.sender)) {
-      socket.emit('receive_message', {
-        sender: 'Sistem',
-        message: 'Susturuldunuz.',
-        timestamp: new Date().toLocaleTimeString()
-      });
-      return;
-    }
-
-    // Yardım Komutu
-    if (data.message.startsWith('/help')) {
-      socket.emit('receive_message', {
-        sender: 'Sistem',
-        message: `Komutlar:
-  /mute @kullanıcı süre(sn) - Kullanıcıyı süreli susturur
-  /unmute @kullanıcı - Susturmayı kaldırır
-  /yetkiver admin/mod @kullanıcı - Yetki verir
-  /yetkisil @kullanıcı - Yetkiyi siler
-  /ban @kullanıcı - Kullanıcıyı IP ile yasaklar`,
-        timestamp: new Date().toLocaleTimeString()
-      });
-      return;
-    }
-
-    // Yetki Verme
-    if (data.message.startsWith('/yetkiver') && senderData && senderData.role === 'god') {
-      const parts = data.message.split(' ');
-      const newRole = parts[1]?.toLowerCase();
-      const targetUsername = parts[2]?.replace('@', '');
-
-      if (['admin', 'moderator'].includes(newRole) && targetUsername) {
-        if (targetUsername.toLowerCase() === 'hang0ver') {
-          socket.emit('receive_message', {
-            sender: 'Sistem',
-            message: `Bu kullanıcının yetkisi değiştirilemez.`,
-            timestamp: new Date().toLocaleTimeString()
-          });
-          return;
-        }
-        await User.updateOne({ username: targetUsername }, { role: newRole });
-        io.emit('receive_message', {
+    // Kullanıcı Mesaj Gönderme
+    socket.on('send_message', async (data) => {
+      const senderData = await User.findOne({ username: data.sender });
+  
+      if (mutedUsers.has(data.sender)) {
+        socket.emit('receive_message', {
           sender: 'Sistem',
-          message: `${targetUsername} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
+          message: 'Susturuldunuz.',
           timestamp: new Date().toLocaleTimeString()
         });
+        return;
       }
-      return;
-    }
-
-    // Yetki Silme
-    if (data.message.startsWith('/yetkisil') && senderData && senderData.role === 'god') {
-      const parts = data.message.split(' ');
-      const targetUsername = parts[1]?.replace('@', '');
-
-      if (targetUsername) {
-        if (targetUsername.toLowerCase() === 'hang0ver') {
-          socket.emit('receive_message', {
-            sender: 'Sistem',
-            message: `Bu kullanıcının yetkisi silinemez.`,
-            timestamp: new Date().toLocaleTimeString()
-          });
-          return;
-        }
-        await User.updateOne({ username: targetUsername }, { role: 'user' });
-        io.emit('receive_message', {
+  
+      // /help Komutu
+      if (data.message.startsWith('/help')) {
+        socket.emit('receive_message', {
           sender: 'Sistem',
-          message: `${targetUsername} kullanıcısının tüm yetkileri kaldırıldı.`,
+          message: `Komutlar:\n/mute @kullanıcı süre(sn) - Kullanıcıyı susturur\n/unmute @kullanıcı - Susturmayı kaldırır\n/yetkiver admin/mod @kullanıcı - Yetki verir\n/yetkisil @kullanıcı - Yetkiyi siler\n/ban @kullanıcı - Kullanıcıyı IP ile banlar`,
           timestamp: new Date().toLocaleTimeString()
         });
+        return;
       }
-      return;
-    }
-
-    // Kullanıcı Susturma
-    if (data.message.startsWith('/mute') && senderData && (['god', 'admin', 'moderator'].includes(senderData.role))) {
-      const parts = data.message.split(' ');
-      const targetUsername = parts[1]?.replace('@', '');
-      const muteDuration = parseInt(parts[2]);
-
-      if (targetUsername) {
-        mutedUsers.set(targetUsername, true);
-        io.emit('receive_message', {
-          sender: 'Sistem',
-          message: `${targetUsername} ${muteDuration || 'belirsiz'} saniye susturuldu.`,
-          timestamp: new Date().toLocaleTimeString()
-        });
-
-        if (!isNaN(muteDuration)) {
-          setTimeout(() => {
-            mutedUsers.delete(targetUsername);
-            io.emit('receive_message', {
+  
+      // Yetki Verme
+      if (data.message.startsWith('/yetkiver') && senderData && senderData.role === 'god') {
+        const parts = data.message.split(' ');
+        const newRole = parts[1]?.toLowerCase();
+        const targetUsername = parts[2]?.replace('@', '');
+  
+        if (['admin', 'moderator'].includes(newRole) && targetUsername) {
+          if (targetUsername.toLowerCase() === 'hang0ver') {
+            socket.emit('receive_message', {
               sender: 'Sistem',
-              message: `${targetUsername} kullanıcısının susturulması sona erdi.`,
+              message: 'Bu kullanıcının yetkisi değiştirilemez.',
               timestamp: new Date().toLocaleTimeString()
             });
-          }, muteDuration * 1000);
+            return;
+          }
+          await User.updateOne({ username: targetUsername }, { role: newRole });
+          io.emit('receive_message', {
+            sender: 'Sistem',
+            message: `${targetUsername} kullanıcısına ${newRole.toUpperCase()} yetkisi verildi.`,
+            timestamp: new Date().toLocaleTimeString()
+          });
         }
+        return;
       }
-      return;
-    }
-
-    // Susturma Kaldırma
-    if (data.message.startsWith('/unmute') && senderData && (['god', 'admin', 'moderator'].includes(senderData.role))) {
-      const parts = data.message.split(' ');
-      const targetUsername = parts[1]?.replace('@', '');
-
-      if (targetUsername && mutedUsers.has(targetUsername)) {
-        mutedUsers.delete(targetUsername);
-        io.emit('receive_message', {
-          sender: 'Sistem',
-          message: `${targetUsername} kullanıcısının susturulması kaldırıldı.`,
-          timestamp: new Date().toLocaleTimeString()
-        });
-      }
-      return;
-    }
-
-    // Kullanıcı Banlama
-    if (data.message.startsWith('/ban') && senderData && (['god', 'admin'].includes(senderData.role))) {
-      const parts = data.message.split(' ');
-      const targetUsername = parts[1]?.replace('@', '');
-
-      if (targetUsername) {
-        for (const [id, user] of onlineUsers.entries()) {
-          if (user.username === targetUsername) {
-            const bannedIP = socket.handshake.address;
-            const newBanned = new BannedIP({ ip: bannedIP });
-            await newBanned.save();
-            const bannedSocket = io.sockets.sockets.get(id);
-            if (bannedSocket) bannedSocket.disconnect();
-            io.emit('receive_message', {
+  
+      // Yetki Silme
+      if (data.message.startsWith('/yetkisil') && senderData && senderData.role === 'god') {
+        const parts = data.message.split(' ');
+        const targetUsername = parts[1]?.replace('@', '');
+  
+        if (targetUsername) {
+          if (targetUsername.toLowerCase() === 'hang0ver') {
+            socket.emit('receive_message', {
               sender: 'Sistem',
-              message: `${targetUsername} IP adresi ile kalıcı olarak yasaklandı.`,
+              message: 'Bu kullanıcının yetkisi silinemez.',
               timestamp: new Date().toLocaleTimeString()
             });
-            break;
+            return;
+          }
+          await User.updateOne({ username: targetUsername }, { role: 'user' });
+          io.emit('receive_message', {
+            sender: 'Sistem',
+            message: `${targetUsername} kullanıcısının tüm yetkileri kaldırıldı.`,
+            timestamp: new Date().toLocaleTimeString()
+          });
+        }
+        return;
+      }
+  
+      // Kullanıcı Susturma (Mute)
+      if (data.message.startsWith('/mute') && senderData && (['god', 'admin', 'moderator'].includes(senderData.role))) {
+        const parts = data.message.split(' ');
+        const targetUsername = parts[1]?.replace('@', '');
+        const muteDuration = parseInt(parts[2]);
+  
+        if (targetUsername) {
+          mutedUsers.set(targetUsername, true);
+          io.emit('receive_message', {
+            sender: 'Sistem',
+            message: `${targetUsername} ${muteDuration || 'belirsiz'} saniye susturuldu.`,
+            timestamp: new Date().toLocaleTimeString()
+          });
+  
+          if (!isNaN(muteDuration)) {
+            setTimeout(() => {
+              mutedUsers.delete(targetUsername);
+              io.emit('receive_message', {
+                sender: 'Sistem',
+                message: `${targetUsername} kullanıcısının susturulması sona erdi.`,
+                timestamp: new Date().toLocaleTimeString()
+              });
+            }, muteDuration * 1000);
           }
         }
+        return;
       }
-      return;
-    }
-
-    // Normal Mesaj Gönderme
-    const newMessage = new Message(data);
-    await newMessage.save();
-    await User.updateOne({ username: data.sender }, { $inc: { credits: 1 } });
-    io.emit('receive_message', data);
-  });
-});
-
-// Her 100 mesajda ekstra 10 kredi hediyesi
-let messageCountTracker = {};
-
-io.on('connection', (socket) => {
-  socket.on('send_message', async (data) => {
-    if (data.sender && data.message && !data.message.startsWith('/')) {
+      // Susturma Kaldırma (Unmute)
+      if (data.message.startsWith('/unmute') && senderData && (['god', 'admin', 'moderator'].includes(senderData.role))) {
+        const parts = data.message.split(' ');
+        const targetUsername = parts[1]?.replace('@', '');
+  
+        if (targetUsername && mutedUsers.has(targetUsername)) {
+          mutedUsers.delete(targetUsername);
+          io.emit('receive_message', {
+            sender: 'Sistem',
+            message: `${targetUsername} kullanıcısının susturulması kaldırıldı.`,
+            timestamp: new Date().toLocaleTimeString()
+          });
+        }
+        return;
+      }
+  
+      // Kullanıcı Banlama
+      if (data.message.startsWith('/ban') && senderData && (['god', 'admin'].includes(senderData.role))) {
+        const parts = data.message.split(' ');
+        const targetUsername = parts[1]?.replace('@', '');
+  
+        if (targetUsername) {
+          for (const [id, user] of onlineUsers.entries()) {
+            if (user.username === targetUsername) {
+              const bannedIP = socket.handshake.address;
+              const newBanned = new BannedIP({ ip: bannedIP });
+              await newBanned.save();
+              const bannedSocket = io.sockets.sockets.get(id);
+              if (bannedSocket) bannedSocket.disconnect();
+              io.emit('receive_message', {
+                sender: 'Sistem',
+                message: `${targetUsername} IP adresi ile kalıcı olarak yasaklandı.`,
+                timestamp: new Date().toLocaleTimeString()
+              });
+              break;
+            }
+          }
+        }
+        return;
+      }
+  
+      // Normal Mesaj Gönderme + 100 Mesajda 10 Kredi Ödülü
+      const newMessage = new Message(data);
+      await newMessage.save();
+      await User.updateOne({ username: data.sender }, { $inc: { credits: 1 } });
+      io.emit('receive_message', data);
+  
       if (!messageCountTracker[data.sender]) {
         messageCountTracker[data.sender] = 0;
       }
       messageCountTracker[data.sender] += 1;
-
+  
       if (messageCountTracker[data.sender] % 100 === 0) {
         await User.updateOne({ username: data.sender }, { $inc: { credits: 10 } });
         socket.emit('receive_message', {
@@ -564,11 +559,10 @@ io.on('connection', (socket) => {
           timestamp: new Date().toLocaleTimeString()
         });
       }
-    }
-  });
-});
+    }); // socket.on('send_message') kapanışı
+  }); // io.on('connection') kapanışı
 
-// Fotoğraf Yükleme API
+  // Fotoğraf Yükleme API (Upload-Image)
 app.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
@@ -599,8 +593,6 @@ app.post('/upload-image', upload.single('image'), async (req, res) => {
     res.status(500).json({ success: false });
   }
 });
-
-// Market Verileri ve Satın Alma API (Önceden Yazılmıştı Tekrara Gerek Yok)
 
 // Sunucu Başlatma
 const PORT = process.env.PORT || 3001;
