@@ -50,14 +50,16 @@ const bannedIPSchema = new mongoose.Schema({
 });
 const BannedIP = mongoose.model('BannedIP', bannedIPSchema);
 
-// Middleware Ayarları
+// CORS Middleware Ayarları
 const corsOptions = {
-  origin: 'https://chattrix-2ur3.onrender.com',
+  origin: 'https://chattrix-2ur3.onrender.com',  // Frontend domain
   methods: ['GET', 'POST'],
-  credentials: true
+  credentials: true  // Cookies ile iletişim için
 };
-app.use(cors(corsOptions));
-app.use(express.json());
+
+// Express için CORS yapılandırması
+app.use(cors(corsOptions));  // Express CORS middleware
+app.use(express.json());  // JSON parsing middleware
 
 // Multer Ayarı (Fotoğraf upload için)
 const storage = multer.memoryStorage();
@@ -65,7 +67,15 @@ const upload = multer({ storage: storage });
 
 // Server ve Socket.IO Başlangıcı
 const server = http.createServer(app);
-const io = new Server(server, { cors: corsOptions });
+
+// Socket.IO için CORS yapılandırması (Eksik olan kısım)
+const io = new Server(server, {
+  cors: {
+    origin: 'https://chattrix-2ur3.onrender.com',  // Frontend domain
+    methods: ['GET', 'POST'],
+    credentials: true  // Cookies ile iletişim için
+  }
+});
 
 // Global Değişkenler
 let onlineUsers = new Map();
