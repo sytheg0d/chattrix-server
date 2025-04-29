@@ -104,7 +104,13 @@ app.post('/login', async (req, res) => {
       const newLog = new Log({ username, ip, type: 'login', timestamp: new Date().toLocaleString() });
       await newLog.save();
       await User.updateOne({ username }, { isOnline: true });
-      return res.status(200).json({ success: true, role: user.role, credits: user.credits, profileImage: user.profileImage });
+      return res.status(200).json({
+        success: true,
+        role: user.role,
+        credits: user.credits,
+        profileImage: user.profileImage,
+        currentTheme: user.currentTheme // <<<< BURASI YENİ
+      });
     } else {
       return res.status(401).json({ success: false, message: 'Geçersiz kullanıcı adı veya şifre' });
     }
@@ -264,6 +270,22 @@ const availableThemes = {
 
 app.get('/market', (req, res) => {
   return res.status(200).json(availableThemes);
+});
+
+// Kullanıcı Tema Güncelleme
+app.post('/update-theme', async (req, res) => {
+  const { username, theme } = req.body;
+  try {
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Kullanıcı bulunamadı.' });
+    }
+    await User.updateOne({ username }, { currentTheme: theme });
+    return res.status(200).json({ success: true, message: 'Tema başarıyla değiştirildi.' });
+  } catch (err) {
+    console.error('❌ Tema güncelleme hatası:', err);
+    return res.status(500).json({ success: false });
+  }
 });
 
 // Tema Satın Alma
