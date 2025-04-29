@@ -541,10 +541,20 @@ io.on('connection', (socket) => {
       }
   
       // Normal Mesaj Gönderme + 100 Mesajda 10 Kredi Ödülü
-      const newMessage = new Message(data);
+      const theme = senderData?.currentTheme || 'default';
+
+      const messageData = {
+        sender: data.sender,
+        message: data.message,
+        timestamp: data.timestamp,
+        theme: theme
+      };
+      
+      const newMessage = new Message(messageData);
       await newMessage.save();
       await User.updateOne({ username: data.sender }, { $inc: { credits: 1 } });
-      io.emit('receive_message', data);
+      io.emit('receive_message', messageData);
+      
   
       if (!messageCountTracker[data.sender]) {
         messageCountTracker[data.sender] = 0;
