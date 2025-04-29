@@ -355,24 +355,29 @@ io.on('connection', (socket) => {
       console.error('❌ Kullanıcı bulunamadı:', username);
       return;
     }
+  
+    const alreadyOnline = [...onlineUsers.values()].some(user => user.username === username);
+  
     onlineUsers.set(socket.id, { username: userData.username, role: userData.role });
     await User.updateOne({ username: userData.username }, { isOnline: true });
-
-    const onlineList = await User.find({ isOnline: true }, 'username role');
+  
+    const onlineList = await User.find({ isOnline: true }, 'username role currentTheme');
     io.emit('update_users', onlineList);
-
+  
     const oldMessages = await Message.find({});
     oldMessages.forEach((msg) => socket.emit('receive_message', msg));
-
-    const joinMessage = new Message({
-      sender: 'Sistem',
-      message: `${username} sohbete katıldı.`,
-      timestamp: new Date().toLocaleTimeString()
-    });
-    await joinMessage.save();
-    io.emit('receive_message', joinMessage);
+  
+    if (!alreadyOnline) {
+      const joinMessage = new Message({
+        sender: 'Sistem',
+        message: `${username} sohbete katıldı.`,
+        timestamp: new Date().toLocaleTimeString()
+      });
+      await joinMessage.save();
+      io.emit('receive_message', joinMessage);
+    }
   });
-
+  
   // Kullanıcı Logout
   socket.on('logout', async (username) => {
     for (const [id, user] of onlineUsers.entries()) {
@@ -382,7 +387,7 @@ io.on('connection', (socket) => {
     }
     await User.updateOne({ username }, { isOnline: false });
 
-    const onlineList = await User.find({ isOnline: true }, 'username role');
+    const onlineList = await User.find({ isOnline: true }, 'username role currentTheme');
     io.emit('update_users', onlineList);
 
     const leaveMessage = new Message({
@@ -409,7 +414,7 @@ io.on('connection', (socket) => {
       onlineUsers.delete(socket.id);
       await User.updateOne({ username: user.username }, { isOnline: false });
 
-      const onlineList = await User.find({ isOnline: true }, 'username role');
+      const onlineList = await User.find({ isOnline: true }, 'username role currentTheme');
       io.emit('update_users', onlineList);
 
       const leaveMessage = new Message({
